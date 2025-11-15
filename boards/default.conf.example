@@ -1,0 +1,57 @@
+# Default Configuration for vivado-fpga-tool
+# This file is optional and provides default settings when no --board is specified
+#
+# To use this file:
+#   1. Copy this file to: boards/default.conf
+#      cp boards/default.conf.example boards/default.conf
+#
+#   2. Edit boards/default.conf with your settings
+#
+#   3. Run info command without --board flag:
+#      ./vivado-fpga-tool.sh info
+#
+# The default.conf file is searched in these locations (in order):
+#   1. ./boards/default.conf
+#   2. ~/.config/vivado-fpga-tool/boards/default.conf
+#   3. <install-prefix>/share/vivado-fpga-tool/boards/default.conf
+
+# ==============================================================================
+# Vivado Installation Path
+# ==============================================================================
+# REQUIRED: Path to Vivado installation
+# This is the only required field for auto-detection mode
+
+# WSL2 example (Windows Vivado accessed from WSL2):
+VIVADO_PATH="/mnt/c/Xilinx/2025.1/Vivado"
+
+# Native Linux example:
+# VIVADO_PATH="/opt/Xilinx/Vivado/2025.1"
+
+# Windows example (if running from Windows):
+# VIVADO_PATH="C:/Xilinx/Vivado/2025.1"
+
+# ==============================================================================
+# Optional: Default Board Settings
+# ==============================================================================
+# If you primarily work with one board, you can set these fields
+# to avoid having to specify --board every time for flash operations
+#
+# Uncomment and configure if you want flash/dump/verify commands
+# to work without --board flag (experimental)
+
+# FPGA_PART="xc7s50csga324-1"
+# FLASH_PART="is25lp128f-spi-x1_x2_x4"
+# JTAG_DEVICE_INDEX=0
+# DEFAULT_FLASH_SIZE="16M"
+# BOARD_DESCRIPTION="My default FPGA board"
+
+# ==============================================================================
+# Advanced Options
+# ==============================================================================
+# These are typically set on the command line, but can be set here as defaults
+
+# Default output format (human or machine)
+# OUTPUT_FORMAT="human"
+
+# Default platform (wsl2, linux, windows) - normally auto-detected
+# PLATFORM="wsl2"
