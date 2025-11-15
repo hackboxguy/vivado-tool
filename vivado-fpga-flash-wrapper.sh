@@ -10,7 +10,7 @@ set -e  # Exit on any error
 DEFAULT_VIVADO_PATH="/home/pi/Xilinx/2025.1/Vivado_Lab"
 DEFAULT_BOARD="xc7s50-is25lp128f"
 DEFAULT_BITBIN_DIR="/home/pi/micropanel/usr/bitbin"
-DEFAULT_BACKUP_DIR="/home/pi/micropanel/usr/vivado-tool/backups"
+DEFAULT_BACKUP_DIR="/home/pi/micropanel/vivado-tool/backups"
 DEFAULT_VIVADO_TOOL="$(dirname "$0")/vivado-fpga-tool.sh"
 
 # USB stick configuration
@@ -160,6 +160,13 @@ mount_usb_stick() {
 # Unmount USB stick
 unmount_usb_stick() {
     if [ -d "$USB_MOUNT_POINT" ] && mount | grep -q "$USB_MOUNT_POINT"; then
+        # Sync filesystem to ensure all writes are flushed to disk
+        if [ $VERBOSE -eq 1 ]; then
+            log_info "Syncing filesystem before unmount..."
+        fi
+        sync
+        sleep 1  # Give the filesystem a moment to complete sync
+
         if [ $VERBOSE -eq 1 ]; then
             log_info "Unmounting USB stick from: $USB_MOUNT_POINT"
         fi
@@ -447,23 +454,99 @@ main() {
             ;;
 
         dump)
-            # Dump to backup with USB priority
+            # Dump to temporary location first, then copy to USB or local backup
             log_info "Operation: Dump FPGA flash to backup"
-            local output_file
-            if ! output_file=$(resolve_output_file "${filename}.bin.bkup" "${backup_dir}/${filename}.bin.bkup"); then
+
+            # Create temporary dump file
+            local temp_dump="/tmp/vivado-dump-$$.bin"
+            log_info "Dumping to temporary file: $temp_dump"
+
+            if ! "$vivado_tool" dump --vivado="$vivado_path" --board="$board" --file="$temp_dump"; then
+                log_error "Dump operation failed"
+                rm -f "$temp_dump"
                 unmount_usb_stick
                 exit 1
             fi
 
-            log_info "Dumping to: $output_file"
-            if ! "$vivado_tool" dump --vivado="$vivado_path" --board="$board" --file="$output_file"; then
-                log_error "Dump operation failed"
+            # Verify temp file was created
+            if [ ! -f "$temp_dump" ]; then
+                log_error "Dump file was not created: $temp_dump"
                 unmount_usb_stick
                 exit 1
             fi
+
+            local file_size=$(stat -c%s "$temp_dump" 2>/dev/null || echo "0")
+            log_info "Dump completed successfully (size: $file_size bytes)"
+
+            # Generate timestamp for archive copy
+            local timestamp=$(date +%Y%m%d-%H%M%S)
+            local base_filename="${filename}.bin.bkup"
+            local archive_filename="${filename}-${timestamp}.bin.bkup"
+
+            # Try to detect and mount USB stick for output
+            local usb_device
+            local final_destination="local backup"
+
+            if usb_device=$(detect_usb_stick); then
+                log_info "USB stick detected for backup storage"
+                local mount_point
+                if mount_point=$(mount_usb_stick "$usb_device"); then
+                    log_info "Copying dump to USB stick..."
+
+                    # Copy as base filename (for easy restore) - use sudo for USB write
+                    if sudo cp "$temp_dump" "$mount_point/$base_filename"; then
+                        log_success "Created restore point: $mount_point/$base_filename"
+                    else
+                        log_error "Failed to copy base file to USB"
+                    fi
+
+                    # Copy as timestamped archive - use sudo for USB write
+                    if sudo cp "$temp_dump" "$mount_point/$archive_filename"; then
+                        log_success "Created archive: $mount_point/$archive_filename"
+                        final_destination="USB stick"
+                    else
+                        log_error "Failed to copy archive to USB"
+                    fi
+
+                    # Sync and unmount
+                    sync
+                    sleep 2  # Give more time for large file sync
+                    unmount_usb_stick
+                else
+                    log_warning "Failed to mount USB stick, using local backup"
+                fi
+            else
+                log_info "No USB stick detected, using local backup"
+            fi
+
+            # If USB failed or not available, save to local backup
+            if [ "$final_destination" = "local backup" ]; then
+                # Ensure backup directory exists
+                mkdir -p "$backup_dir"
+
+                log_info "Copying dump to local backup directory..."
+
+                # Copy as base filename (for easy restore)
+                if cp "$temp_dump" "${backup_dir}/$base_filename"; then
+                    log_success "Created restore point: ${backup_dir}/$base_filename"
+                else
+                    log_error "Failed to copy base file to local backup"
+                fi
+
+                # Copy as timestamped archive
+                if cp "$temp_dump" "${backup_dir}/$archive_filename"; then
+                    log_success "Created archive: ${backup_dir}/$archive_filename"
+                else
+                    log_error "Failed to copy archive to local backup"
+                fi
+            fi
+
+            # Clean up temporary file
+            rm -f "$temp_dump"
+            log_info "Temporary dump file cleaned up"
 
             log_success "Dump operation completed successfully"
-            unmount_usb_stick
+            log_info "Backup location: $final_destination"
             ;;
 
         revert)
