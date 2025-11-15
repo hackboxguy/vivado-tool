@@ -558,12 +558,30 @@ main() {
                 exit 1
             fi
 
-            log_info "Reverting from: $input_file"
-            if ! "$vivado_tool" flash --vivado="$vivado_path" --board="$board" --file="$input_file"; then
-                log_error "Revert operation failed"
+            log_info "Found backup file: $input_file"
+
+            # Vivado only accepts .bin or .mcs extensions, not .bin.bkup
+            # Copy backup to temporary .bin file
+            local temp_revert="/tmp/vivado-revert-$$.bin"
+            log_info "Copying backup to temporary file: $temp_revert"
+
+            if ! cp "$input_file" "$temp_revert"; then
+                log_error "Failed to copy backup file to temporary location"
                 unmount_usb_stick
                 exit 1
             fi
+
+            log_info "Reverting from: $temp_revert"
+            if ! "$vivado_tool" flash --vivado="$vivado_path" --board="$board" --file="$temp_revert"; then
+                log_error "Revert operation failed"
+                rm -f "$temp_revert"
+                unmount_usb_stick
+                exit 1
+            fi
+
+            # Clean up temporary file
+            rm -f "$temp_revert"
+            log_info "Temporary revert file cleaned up"
 
             log_success "Revert operation completed successfully"
             unmount_usb_stick
